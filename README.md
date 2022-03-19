@@ -1,4 +1,4 @@
-# PHPNitificaiton
+# PHPNotificaiton
 Realtime ZeroMQ Push notificcaiton Demo using Ratchet, React and ZeroMQ for PHP
 
 # ZeroMQ Installation
