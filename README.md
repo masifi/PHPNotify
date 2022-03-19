@@ -11,7 +11,9 @@ Go to extension directory in XAMPP/MAMP then try to download and build the follo
 
 ## 2. Enable ZeroMQ extension for PHP
 To enable ZeroMQ extension add the following line in `php.ini`.
+
 `extension=zmq.so` for mac/linux systems
+
 `extension=zmq_X.dll` for windows system
 
 ## 3. Install ZeroMQ pakcage using composer
