@@ -2,25 +2,17 @@
 
 namespace React\ZMQ;
 
-use PHPUnit\Framework\TestCase;
-
-class BufferTest extends TestCase
+class BufferTest extends \PHPUnit_Framework_TestCase
 {
-    /**
-     * @test
-     */
+    /** @test */
     public function sendShouldQueueMessages()
     {
-        $loop = $this->getMockBuilder('React\EventLoop\LoopInterface')->getMock();
-
+        $loop = $this->getMock('React\EventLoop\LoopInterface');
         $loop
             ->expects($this->once())
             ->method('addWriteStream');
 
-        $socket = $this->getMockBuilder('ZMQSocket')
-            ->disableOriginalConstructor()
-            ->getMock();
-
+        $socket = $this->getMockBuilder('ZMQSocket')->disableOriginalConstructor()->getMock();
         $socket
             ->expects($this->never())
             ->method('send');
@@ -28,34 +20,26 @@ class BufferTest extends TestCase
         $writeListener = function () {};
 
         $buffer = new Buffer($socket, 42, $loop, $writeListener);
-
         $buffer->send('foo');
     }
 
-    /**
-     * @test
-     */
+    /** @test */
     public function loopShouldSendQueuedMessages()
     {
         $writeListener = function () {};
 
-        $loop = $this->getMockBuilder('React\EventLoop\LoopInterface')->getMock();
-
+        $loop = $this->getMock('React\EventLoop\LoopInterface');
         $loop
             ->expects($this->once())
             ->method('addWriteStream')
             ->with($this->isType('integer'), $writeListener);
 
-        $socket = $this->getMockBuilder('ZMQSocket')
-            ->disableOriginalConstructor()
-            ->getMock();
-
+        $socket = $this->getMockBuilder('ZMQSocket')->disableOriginalConstructor()->getMock();
         $socket
             ->expects($this->at(0))
             ->method('sendmulti')
             ->with(array('foo'), \ZMQ::MODE_DONTWAIT)
             ->will($this->returnSelf());
-
         $socket
             ->expects($this->at(1))
             ->method('sendmulti')
@@ -63,7 +47,6 @@ class BufferTest extends TestCase
             ->will($this->returnSelf());
 
         $buffer = new Buffer($socket, 42, $loop, $writeListener);
-
         $buffer->send('foo');
         $buffer->send('bar');
 

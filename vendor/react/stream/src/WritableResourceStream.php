@@ -3,14 +3,11 @@
 namespace React\Stream;
 
 use Evenement\EventEmitter;
-use React\EventLoop\Loop;
 use React\EventLoop\LoopInterface;
 
 final class WritableResourceStream extends EventEmitter implements WritableStreamInterface
 {
     private $stream;
-
-    /** @var LoopInterface */
     private $loop;
 
     /**
@@ -28,7 +25,7 @@ final class WritableResourceStream extends EventEmitter implements WritableStrea
     private $closed = false;
     private $data = '';
 
-    public function __construct($stream, LoopInterface $loop = null, $writeBufferSoftLimit = null, $writeChunkSize = null)
+    public function __construct($stream, LoopInterface $loop, $writeBufferSoftLimit = null, $writeChunkSize = null)
     {
         if (!\is_resource($stream) || \get_resource_type($stream) !== "stream") {
             throw new \InvalidArgumentException('First parameter must be a valid stream resource');
@@ -47,7 +44,7 @@ final class WritableResourceStream extends EventEmitter implements WritableStrea
         }
 
         $this->stream = $stream;
-        $this->loop = $loop ?: Loop::get();
+        $this->loop = $loop;
         $this->softLimit = ($writeBufferSoftLimit === null) ? 65536 : (int)$writeBufferSoftLimit;
         $this->writeChunkSize = ($writeChunkSize === null) ? -1 : (int)$writeChunkSize;
     }

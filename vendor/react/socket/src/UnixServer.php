@@ -3,7 +3,6 @@
 namespace React\Socket;
 
 use Evenement\EventEmitter;
-use React\EventLoop\Loop;
 use React\EventLoop\LoopInterface;
 use InvalidArgumentException;
 use RuntimeException;
@@ -13,7 +12,7 @@ use RuntimeException;
  * is responsible for accepting plaintext connections on unix domain sockets.
  *
  * ```php
- * $server = new React\Socket\UnixServer('unix:///tmp/app.sock');
+ * $server = new React\Socket\UnixServer('unix:///tmp/app.sock', $loop);
  * ```
  *
  * See also the `ServerInterface` for more details.
@@ -35,32 +34,23 @@ final class UnixServer extends EventEmitter implements ServerInterface
      * for more details.
      *
      * ```php
-     * $server = new React\Socket\UnixServer('unix:///tmp/app.sock');
+     * $server = new React\Socket\UnixServer('unix:///tmp/app.sock', $loop);
      * ```
      *
-     * This class takes an optional `LoopInterface|null $loop` parameter that can be used to
-     * pass the event loop instance to use for this object. You can use a `null` value
-     * here in order to use the [default loop](https://github.com/reactphp/event-loop#loop).
-     * This value SHOULD NOT be given unless you're sure you want to explicitly use a
-     * given event loop instance.
-     *
-     * @param string         $path
-     * @param ?LoopInterface $loop
-     * @param array          $context
+     * @param string        $path
+     * @param LoopInterface $loop
+     * @param array         $context
      * @throws InvalidArgumentException if the listening address is invalid
      * @throws RuntimeException if listening on this address fails (already in use etc.)
      */
-    public function __construct($path, LoopInterface $loop = null, array $context = array())
+    public function __construct($path, LoopInterface $loop, array $context = array())
     {
-        $this->loop = $loop ?: Loop::get();
+        $this->loop = $loop;
 
         if (\strpos($path, '://') === false) {
             $path = 'unix://' . $path;
         } elseif (\substr($path, 0, 7) !== 'unix://') {
-            throw new \InvalidArgumentException(
-                'Given URI "' . $path . '" is invalid (EINVAL)',
-                \defined('SOCKET_EINVAL') ? \SOCKET_EINVAL : 22
-            );
+            throw new \InvalidArgumentException('Given URI "' . $path . '" is invalid');
         }
 
         $this->master = @\stream_socket_server(
@@ -82,10 +72,7 @@ final class UnixServer extends EventEmitter implements ServerInterface
                 }
             }
 
-            throw new \RuntimeException(
-                'Failed to listen on Unix domain socket "' . $path . '": ' . $errstr . SocketServer::errconst($errno),
-                $errno
-            );
+            throw new \RuntimeException('Failed to listen on Unix domain socket "' . $path . '": ' . $errstr, $errno);
         }
         \stream_set_blocking($this->master, 0);
 
@@ -119,10 +106,10 @@ final class UnixServer extends EventEmitter implements ServerInterface
 
         $that = $this;
         $this->loop->addReadStream($this->master, function ($master) use ($that) {
-            try {
-                $newSocket = SocketServer::accept($master);
-            } catch (\RuntimeException $e) {
-                $that->emit('error', array($e));
+            $newSocket = @\stream_socket_accept($master);
+            if (false === $newSocket) {
+                $that->emit('error', array(new \RuntimeException('Error accepting new connection')));
+
                 return;
             }
             $that->handleConnection($newSocket);

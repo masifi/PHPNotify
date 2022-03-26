@@ -23,28 +23,29 @@ final class Parser
      */
     public function parseMessage($data)
     {
-        $message = $this->parse($data, 0);
-        if ($message === null) {
+        // create empty message with two additional, temporary properties for parser
+        $message = new Message();
+        $message->data = $data;
+        $message->consumed = null;
+
+        if ($this->parse($data, $message) !== $message) {
             throw new InvalidArgumentException('Unable to parse binary message');
         }
+
+        unset($message->data, $message->consumed);
 
         return $message;
     }
 
-    /**
-     * @param string $data
-     * @param int    $consumed
-     * @return ?Message
-     */
-    private function parse($data, $consumed)
+    private function parse($data, Message $message)
     {
-        if (!isset($data[12 - 1])) {
-            return null;
+        if (!isset($message->data[12 - 1])) {
+            return;
         }
 
-        list($id, $fields, $qdCount, $anCount, $nsCount, $arCount) = array_values(unpack('n*', substr($data, 0, 12)));
+        list($id, $fields, $qdCount, $anCount, $nsCount, $arCount) = array_values(unpack('n*', substr($message->data, 0, 12)));
+        $message->consumed += 12;
 
-        $message = new Message();
         $message->id = $id;
         $message->rcode = $fields & 0xf;
         $message->ra = (($fields >> 7) & 1) === 1;
@@ -53,13 +54,12 @@ final class Parser
         $message->aa = (($fields >> 10) & 1) === 1;
         $message->opcode = ($fields >> 11) & 0xf;
         $message->qr = (($fields >> 15) & 1) === 1;
-        $consumed += 12;
 
         // parse all questions
         for ($i = $qdCount; $i > 0; --$i) {
-            list($question, $consumed) = $this->parseQuestion($data, $consumed);
+            $question = $this->parseQuestion($message);
             if ($question === null) {
-                return null;
+                return;
             } else {
                 $message->questions[] = $question;
             }
@@ -67,9 +67,9 @@ final class Parser
 
         // parse all answer records
         for ($i = $anCount; $i > 0; --$i) {
-            list($record, $consumed) = $this->parseRecord($data, $consumed);
+            $record = $this->parseRecord($message);
             if ($record === null) {
-                return null;
+                return;
             } else {
                 $message->answers[] = $record;
             }
@@ -77,9 +77,9 @@ final class Parser
 
         // parse all authority records
         for ($i = $nsCount; $i > 0; --$i) {
-            list($record, $consumed) = $this->parseRecord($data, $consumed);
+            $record = $this->parseRecord($message);
             if ($record === null) {
-                return null;
+                return;
             } else {
                 $message->authority[] = $record;
             }
@@ -87,9 +87,9 @@ final class Parser
 
         // parse all additional records
         for ($i = $arCount; $i > 0; --$i) {
-            list($record, $consumed) = $this->parseRecord($data, $consumed);
+            $record = $this->parseRecord($message);
             if ($record === null) {
-                return null;
+                return;
             } else {
                 $message->additional[] = $record;
             }
@@ -99,48 +99,49 @@ final class Parser
     }
 
     /**
-     * @param string $data
-     * @param int $consumed
-     * @return array
+     * @param Message $message
+     * @return ?Query
      */
-    private function parseQuestion($data, $consumed)
+    private function parseQuestion(Message $message)
     {
-        list($labels, $consumed) = $this->readLabels($data, $consumed);
+        $consumed = $message->consumed;
 
-        if ($labels === null || !isset($data[$consumed + 4 - 1])) {
-            return array(null, null);
+        list($labels, $consumed) = $this->readLabels($message->data, $consumed);
+
+        if ($labels === null || !isset($message->data[$consumed + 4 - 1])) {
+            return;
         }
 
-        list($type, $class) = array_values(unpack('n*', substr($data, $consumed, 4)));
+        list($type, $class) = array_values(unpack('n*', substr($message->data, $consumed, 4)));
         $consumed += 4;
 
-        return array(
-            new Query(
-                implode('.', $labels),
-                $type,
-                $class
-            ),
-            $consumed
+        $message->consumed = $consumed;
+
+        return new Query(
+            implode('.', $labels),
+            $type,
+            $class
         );
     }
 
     /**
-     * @param string $data
-     * @param int $consumed
-     * @return array An array with a parsed Record on success or array with null if data is invalid/incomplete
+     * @param Message $message
+     * @return ?Record returns parsed Record on success or null if data is invalid/incomplete
      */
-    private function parseRecord($data, $consumed)
+    private function parseRecord(Message $message)
     {
-        list($name, $consumed) = $this->readDomain($data, $consumed);
+        $consumed = $message->consumed;
 
-        if ($name === null || !isset($data[$consumed + 10 - 1])) {
-            return array(null, null);
+        list($name, $consumed) = $this->readDomain($message->data, $consumed);
+
+        if ($name === null || !isset($message->data[$consumed + 10 - 1])) {
+            return null;
         }
 
-        list($type, $class) = array_values(unpack('n*', substr($data, $consumed, 4)));
+        list($type, $class) = array_values(unpack('n*', substr($message->data, $consumed, 4)));
         $consumed += 4;
 
-        list($ttl) = array_values(unpack('N', substr($data, $consumed, 4)));
+        list($ttl) = array_values(unpack('N', substr($message->data, $consumed, 4)));
         $consumed += 4;
 
         // TTL is a UINT32 that must not have most significant bit set for BC reasons
@@ -148,11 +149,11 @@ final class Parser
             $ttl = 0;
         }
 
-        list($rdLength) = array_values(unpack('n', substr($data, $consumed, 2)));
+        list($rdLength) = array_values(unpack('n', substr($message->data, $consumed, 2)));
         $consumed += 2;
 
-        if (!isset($data[$consumed + $rdLength - 1])) {
-            return array(null, null);
+        if (!isset($message->data[$consumed + $rdLength - 1])) {
+            return null;
         }
 
         $rdata = null;
@@ -160,27 +161,27 @@ final class Parser
 
         if (Message::TYPE_A === $type) {
             if ($rdLength === 4) {
-                $rdata = inet_ntop(substr($data, $consumed, $rdLength));
+                $rdata = inet_ntop(substr($message->data, $consumed, $rdLength));
                 $consumed += $rdLength;
             }
         } elseif (Message::TYPE_AAAA === $type) {
             if ($rdLength === 16) {
-                $rdata = inet_ntop(substr($data, $consumed, $rdLength));
+                $rdata = inet_ntop(substr($message->data, $consumed, $rdLength));
                 $consumed += $rdLength;
             }
         } elseif (Message::TYPE_CNAME === $type || Message::TYPE_PTR === $type || Message::TYPE_NS === $type) {
-            list($rdata, $consumed) = $this->readDomain($data, $consumed);
-        } elseif (Message::TYPE_TXT === $type || Message::TYPE_SPF === $type) {
+            list($rdata, $consumed) = $this->readDomain($message->data, $consumed);
+        } elseif (Message::TYPE_TXT === $type) {
             $rdata = array();
             while ($consumed < $expected) {
-                $len = ord($data[$consumed]);
-                $rdata[] = (string)substr($data, $consumed + 1, $len);
+                $len = ord($message->data[$consumed]);
+                $rdata[] = (string)substr($message->data, $consumed + 1, $len);
                 $consumed += $len + 1;
             }
         } elseif (Message::TYPE_MX === $type) {
             if ($rdLength > 2) {
-                list($priority) = array_values(unpack('n', substr($data, $consumed, 2)));
-                list($target, $consumed) = $this->readDomain($data, $consumed + 2);
+                list($priority) = array_values(unpack('n', substr($message->data, $consumed, 2)));
+                list($target, $consumed) = $this->readDomain($message->data, $consumed + 2);
 
                 $rdata = array(
                     'priority' => $priority,
@@ -189,8 +190,8 @@ final class Parser
             }
         } elseif (Message::TYPE_SRV === $type) {
             if ($rdLength > 6) {
-                list($priority, $weight, $port) = array_values(unpack('n*', substr($data, $consumed, 6)));
-                list($target, $consumed) = $this->readDomain($data, $consumed + 6);
+                list($priority, $weight, $port) = array_values(unpack('n*', substr($message->data, $consumed, 6)));
+                list($target, $consumed) = $this->readDomain($message->data, $consumed + 6);
 
                 $rdata = array(
                     'priority' => $priority,
@@ -201,8 +202,8 @@ final class Parser
             }
         } elseif (Message::TYPE_SSHFP === $type) {
             if ($rdLength > 2) {
-                list($algorithm, $hash) = \array_values(\unpack('C*', \substr($data, $consumed, 2)));
-                $fingerprint = \bin2hex(\substr($data, $consumed + 2, $rdLength - 2));
+                list($algorithm, $hash) = \array_values(\unpack('C*', \substr($message->data, $consumed, 2)));
+                $fingerprint = \bin2hex(\substr($message->data, $consumed + 2, $rdLength - 2));
                 $consumed += $rdLength;
 
                 $rdata = array(
@@ -212,11 +213,11 @@ final class Parser
                 );
             }
         } elseif (Message::TYPE_SOA === $type) {
-            list($mname, $consumed) = $this->readDomain($data, $consumed);
-            list($rname, $consumed) = $this->readDomain($data, $consumed);
+            list($mname, $consumed) = $this->readDomain($message->data, $consumed);
+            list($rname, $consumed) = $this->readDomain($message->data, $consumed);
 
-            if ($mname !== null && $rname !== null && isset($data[$consumed + 20 - 1])) {
-                list($serial, $refresh, $retry, $expire, $minimum) = array_values(unpack('N*', substr($data, $consumed, 20)));
+            if ($mname !== null && $rname !== null && isset($message->data[$consumed + 20 - 1])) {
+                list($serial, $refresh, $retry, $expire, $minimum) = array_values(unpack('N*', substr($message->data, $consumed, 20)));
                 $consumed += 20;
 
                 $rdata = array(
@@ -229,29 +230,13 @@ final class Parser
                     'minimum' => $minimum
                 );
             }
-        } elseif (Message::TYPE_OPT === $type) {
-            $rdata = array();
-            while (isset($data[$consumed + 4 - 1])) {
-                list($code, $length) = array_values(unpack('n*', substr($data, $consumed, 4)));
-                $value = (string) substr($data, $consumed + 4, $length);
-                if ($code === Message::OPT_TCP_KEEPALIVE && $value === '') {
-                    $value = null;
-                } elseif ($code === Message::OPT_TCP_KEEPALIVE && $length === 2) {
-                    list($value) = array_values(unpack('n', $value));
-                    $value = round($value * 0.1, 1);
-                } elseif ($code === Message::OPT_TCP_KEEPALIVE) {
-                    break;
-                }
-                $rdata[$code] = $value;
-                $consumed += 4 + $length;
-            }
         } elseif (Message::TYPE_CAA === $type) {
             if ($rdLength > 3) {
-                list($flag, $tagLength) = array_values(unpack('C*', substr($data, $consumed, 2)));
+                list($flag, $tagLength) = array_values(unpack('C*', substr($message->data, $consumed, 2)));
 
                 if ($tagLength > 0 && $rdLength - 2 - $tagLength > 0) {
-                    $tag = substr($data, $consumed + 2, $tagLength);
-                    $value = substr($data, $consumed + 2 + $tagLength, $rdLength - 2 - $tagLength);
+                    $tag = substr($message->data, $consumed + 2, $tagLength);
+                    $value = substr($message->data, $consumed + 2 + $tagLength, $rdLength - 2 - $tagLength);
                     $consumed += $rdLength;
 
                     $rdata = array(
@@ -263,19 +248,18 @@ final class Parser
             }
         } else {
             // unknown types simply parse rdata as an opaque binary string
-            $rdata = substr($data, $consumed, $rdLength);
+            $rdata = substr($message->data, $consumed, $rdLength);
             $consumed += $rdLength;
         }
 
         // ensure parsing record data consumes expact number of bytes indicated in record length
         if ($consumed !== $expected || $rdata === null) {
-            return array(null, null);
+            return null;
         }
 
-        return array(
-            new Record($name, $type, $class, $ttl, $rdata),
-            $consumed
-        );
+        $message->consumed = $consumed;
+
+        return new Record($name, $type, $class, $ttl, $rdata);
     }
 
     private function readDomain($data, $consumed)
@@ -286,28 +270,10 @@ final class Parser
             return array(null, null);
         }
 
-        // use escaped notation for each label part, then join using dots
-        return array(
-            \implode(
-                '.',
-                \array_map(
-                    function ($label) {
-                        return \addcslashes($label, "\0..\40.\177");
-                    },
-                    $labels
-                )
-            ),
-            $consumed
-        );
+        return array(implode('.', $labels), $consumed);
     }
 
-    /**
-     * @param string $data
-     * @param int    $consumed
-     * @param int    $compressionDepth maximum depth for compressed labels to avoid unreasonable recursion
-     * @return array
-     */
-    private function readLabels($data, $consumed, $compressionDepth = 127)
+    private function readLabels($data, $consumed)
     {
         $labels = array();
 
@@ -325,14 +291,14 @@ final class Parser
             }
 
             // first two bits set? this is a compressed label (14 bit pointer offset)
-            if (($length & 0xc0) === 0xc0 && isset($data[$consumed + 1]) && $compressionDepth) {
+            if (($length & 0xc0) === 0xc0 && isset($data[$consumed + 1])) {
                 $offset = ($length & ~0xc0) << 8 | \ord($data[$consumed + 1]);
                 if ($offset >= $consumed) {
                     return array(null, null);
                 }
 
                 $consumed += 2;
-                list($newLabels) = $this->readLabels($data, $offset, $compressionDepth - 1);
+                list($newLabels) = $this->readLabels($data, $offset);
 
                 if ($newLabels === null) {
                     return array(null, null);

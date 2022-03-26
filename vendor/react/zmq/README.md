@@ -2,14 +2,18 @@
 
 ZeroMQ bindings for React.
 
-[![Build Status](https://secure.travis-ci.org/friends-of-reactphp/zmq.png?branch=master)](http://travis-ci.org/friends-of-reactphp/zmq)
+[![Build Status](https://secure.travis-ci.org/reactphp/zmq.png?branch=master)](http://travis-ci.org/reactphp/zmq)
 
 ## Install
 
 The recommended way to install react/zmq is [through composer](http://getcomposer.org).
 
-```bash
-composer require react/zmq
+```JSON
+{
+    "require": {
+        "react/zmq": "0.2.*|0.3.*"
+    }
+}
 ```
 
 ## Example

@@ -23,7 +23,6 @@ class ComposerStaticInit5b81cecd58d2b2263d1c1352c857c9ae
         ),
         'R' => 
         array (
-            'React\\ZMQ\\' => 10,
             'React\\Stream\\' => 13,
             'React\\Socket\\' => 13,
             'React\\Promise\\Timer\\' => 20,
@@ -60,10 +59,6 @@ class ComposerStaticInit5b81cecd58d2b2263d1c1352c857c9ae
         'Symfony\\Component\\HttpFoundation\\' => 
         array (
             0 => __DIR__ . '/..' . '/symfony/http-foundation',
-        ),
-        'React\\ZMQ\\' => 
-        array (
-            0 => __DIR__ . '/..' . '/react/zmq/src',
         ),
         'React\\Stream\\' => 
         array (
@@ -117,6 +112,13 @@ class ComposerStaticInit5b81cecd58d2b2263d1c1352c857c9ae
     );
 
     public static $prefixesPsr0 = array (
+        'R' => 
+        array (
+            'React\\ZMQ' => 
+            array (
+                0 => __DIR__ . '/..' . '/react/zmq/src',
+            ),
+        ),
         'E' => 
         array (
             'Evenement' => 
