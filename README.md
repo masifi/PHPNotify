@@ -14,7 +14,7 @@ To enable ZeroMQ extension add the following line in `php.ini`.
 
 `extension=/path/to/zmq.so` for mac/linux systems
 
-`extension=zmq_X.dll` for windows system
+`extension=X:\pathe\to\zmq_X.dll` for windows system
 
 ## 3. Install ZeroMQ pakcage using composer
 `composer require react/zmq`
